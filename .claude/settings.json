@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/douglasjohnson/Documents/Data/SEA-PLM/**)",
+      "Bash(brew install:*)",
+      "Bash(pdftotext \"/Users/douglasjohnson/Documents/Data/SEA-PLM/2019/SEA-PLM 2019 Data User Manual.pdf\" -)",
+      "Bash(pdftotext \"/Users/douglasjohnson/Documents/Data/SEA-PLM/2019/SEA-PLM MS19 Codebook Student Questionnaire.pdf\" -)",
+      "mcp__mcp-stata__create_session",
+      "mcp__mcp-stata__run_do_file",
+      "mcp__mcp-stata__run_command"
+    ]
+  }
+}
