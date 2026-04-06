@@ -22,5 +22,9 @@ I am fairly confident in all of these simplifications.
 **Results**
 The ICC of the first plausible value for math for region 5 is .22 but the ICC for other regions are higher. The average across regions is .36
 
-If we go with an ICC of .25 for region 
+The r squared for the regression of the math score on school level covariates is about .55. Since we will have access to national assessment scores, I think we can assume a fairly high r squared of .5
+
+If we go with an unconditional ICC of .25 for region 5 and a school level r squared of .5 then our overall conditional ICC would be .25*.5 / (.25*.5 + .75)=0.143
+If we want to be slightly more conservative and assume an unconditional ICC of .3 and a school level r squared of .4 then our overall conditional ICC would be .3*.5 / (.3*.4 + .7)=0.183.
+
 
