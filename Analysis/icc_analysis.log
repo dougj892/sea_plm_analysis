@@ -1,0 +1,574 @@
+------------------------------------------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  /Users/douglasjohnson/Documents/code/sea_plm_analysis/Analysis/icc_analysis.log
+  log type:  text
+ opened on:   6 Apr 2026, 15:33:28
+
+. 
+. 
+. /*==============================================================================
+>   SECTION 1 — IMPORT STUDENT DATA
+> ==============================================================================*/
+. 
+. di as txt _n "Loading student data..."
+
+Loading student data...
+
+. import spss using "$data_path/SEA-PLM_Regional_Students 2.0.SAV", clear
+(444 vars, 31,200 obs)
+
+. rename cnt CNT
+
+. di as txt "Obs: `=_N'   Vars: `=c(k)'"
+Obs: 31200   Vars: 444
+
+. 
+. 
+. /*==============================================================================
+>   SECTION 2 — DATA PREPARATION
+> ==============================================================================*/
+. 
+. *--- Unique school identifier (country + stratum + school) -------------------*
+. capture confirm string variable StIDStrt
+
+. if _rc tostring StIDStrt, gen(StIDStrt_s) format("%02.0f")
+
+. else   gen StIDStrt_s = StIDStrt
+
+. 
+. capture confirm string variable StIDSch
+
+. if _rc tostring StIDSch, gen(StIDSch_s) format("%03.0f")
+
+. else   gen StIDSch_s = StIDSch
+
+. 
+. capture confirm string variable CNT
+
+. if _rc decode CNT, gen(CNT_s)
+
+. else   gen CNT_s = CNT
+
+. 
+. gen schoolid_str = CNT_s + StIDStrt_s + StIDSch_s
+
+. encode schoolid_str, gen(schoolid)
+
+. label variable schoolid "Unique school identifier (CNT+stratum+school)"
+
+. drop StIDStrt_s StIDSch_s CNT_s schoolid_str
+
+. 
+. *--- Scaled weights (mean = 1 within country) --------------------------------*
+. bysort CNT: egen wt_mean = mean(WT2019)
+
+. gen wt_scaled = WT2019 / wt_mean
+
+. drop wt_mean
+
+. label variable wt_scaled "WT2019 scaled to mean=1 within country"
+
+. 
+. 
+. /*==============================================================================
+>   SECTION 3 — UNCONDITIONAL ICC BY COUNTRY AND SUBJECT  (via loneway)
+> 
+>   loneway uses the one-way ANOVA estimator: much faster than mixed.
+>   Returns r(rho) = ICC, r(se_rho) = SE, r(N) = students, r(ngroup) = schools.
+> 
+>   Combining rules across 5 PVs (Rubin 1987):
+>     ICC_bar  = mean(ICC_k)
+>     V_W      = mean(SE²_k)
+>     V_B      = sum((ICC_k − ICC_bar)²) / 4
+>     V_total  = V_W + (1 + 1/5) * V_B
+>     SE_comb  = sqrt(V_total)
+> ==============================================================================*/
+. 
+. di as txt _n(2) "========================================================"
+
+
+========================================================
+
+. di as txt        "  UNCONDITIONAL ICC BY COUNTRY AND SUBJECT"
+  UNCONDITIONAL ICC BY COUNTRY AND SUBJECT
+
+. di as txt        "========================================================"
+========================================================
+
+. 
+. local countries KHM LAO MMR MYS PHL VNM
+
+. local subjects  M R W
+
+. local subj_lbl_M "Mathematics"
+
+. local subj_lbl_R "Reading"
+
+. local subj_lbl_W "Writing"
+
+. 
+. tempname icc_results
+
+. matrix `icc_results' = J(18, 4, .)   // 6 countries × 3 subjects
+
+. matrix colnames `icc_results' = ICC SE N_students N_schools
+
+. local row = 0
+
+. 
+. foreach cnt of local countries {
+  2.     foreach subj of local subjects {
+  3.         local ++row
+  4.         di as txt _n "  Country: `cnt'   Subject: `subj_lbl_`subj''"
+  5. 
+.         * Collect PV-specific ICC (loneway returns r(rho), r(N), r(N_g); no SE)
+.         forvalues pv = 1/5 {
+  6.             quietly loneway PV`pv'_`subj' schoolid if CNT == "`cnt'"
+  7.             scalar icc_`pv' = r(rho)
+  8.         }
+  9. 
+.         * Store sample sizes from last PV (stable across PVs)
+.         scalar n_stu    = r(N)
+ 10.         scalar n_school = r(N_g)
+ 11. 
+.         * Rubin's combining rules (between-PV variance only; loneway has no SE)
+.         scalar icc_bar = (icc_1 + icc_2 + icc_3 + icc_4 + icc_5) / 5
+ 12.         scalar V_B = ((icc_1 - icc_bar)^2 + (icc_2 - icc_bar)^2 + ///
+>                       (icc_3 - icc_bar)^2 + (icc_4 - icc_bar)^2 + ///
+>                       (icc_5 - icc_bar)^2) / 4
+ 13.         scalar se_comb = sqrt(1.2 * V_B)
+ 14. 
+.         di as txt "    ICC = " %6.4f icc_bar ///
+>                   "   SE = " %6.4f se_comb ///
+>                   "   95% CI: [" %6.4f (icc_bar - 1.96*se_comb) ///
+>                   ", " %6.4f (icc_bar + 1.96*se_comb) "]" ///
+>                   "   N_students=" n_stu "  N_schools=" n_school
+ 15. 
+.         matrix `icc_results'[`row', 1] = icc_bar
+ 16.         matrix `icc_results'[`row', 2] = se_comb
+ 17.         matrix `icc_results'[`row', 3] = n_stu
+ 18.         matrix `icc_results'[`row', 4] = n_school
+ 19.     }
+ 20. }
+
+  Country: KHM   Subject: Mathematics
+    ICC = 0.3398   SE = 0.0037   95% CI: [0.3325, 0.3470]   N_students=5396  N_schools=.
+
+  Country: KHM   Subject: Reading
+    ICC = 0.3050   SE = 0.0042   95% CI: [0.2968, 0.3131]   N_students=5396  N_schools=.
+
+  Country: KHM   Subject: Writing
+    ICC = 0.2446   SE = 0.0028   95% CI: [0.2391, 0.2500]   N_students=5396  N_schools=.
+
+  Country: LAO   Subject: Mathematics
+    ICC = 0.4931   SE = 0.0055   95% CI: [0.4824, 0.5038]   N_students=4698  N_schools=.
+
+  Country: LAO   Subject: Reading
+    ICC = 0.4427   SE = 0.0046   95% CI: [0.4338, 0.4517]   N_students=4698  N_schools=.
+
+  Country: LAO   Subject: Writing
+    ICC = 0.4595   SE = 0.0102   95% CI: [0.4394, 0.4796]   N_students=4698  N_schools=.
+
+  Country: MMR   Subject: Mathematics
+    ICC = 0.2636   SE = 0.0034   95% CI: [0.2570, 0.2703]   N_students=5707  N_schools=.
+
+  Country: MMR   Subject: Reading
+    ICC = 0.3188   SE = 0.0057   95% CI: [0.3076, 0.3300]   N_students=5707  N_schools=.
+
+  Country: MMR   Subject: Writing
+    ICC = 0.3815   SE = 0.0087   95% CI: [0.3644, 0.3985]   N_students=5707  N_schools=.
+
+  Country: MYS   Subject: Mathematics
+    ICC = 0.4304   SE = 0.0053   95% CI: [0.4199, 0.4408]   N_students=4479  N_schools=.
+
+  Country: MYS   Subject: Reading
+    ICC = 0.3704   SE = 0.0063   95% CI: [0.3581, 0.3827]   N_students=4479  N_schools=.
+
+  Country: MYS   Subject: Writing
+    ICC = 0.3242   SE = 0.0092   95% CI: [0.3062, 0.3423]   N_students=4479  N_schools=.
+
+  Country: PHL   Subject: Mathematics
+    ICC = 0.4273   SE = 0.0027   95% CI: [0.4221, 0.4326]   N_students=6083  N_schools=.
+
+  Country: PHL   Subject: Reading
+    ICC = 0.4709   SE = 0.0025   95% CI: [0.4660, 0.4758]   N_students=6083  N_schools=.
+
+  Country: PHL   Subject: Writing
+    ICC = 0.3568   SE = 0.0037   95% CI: [0.3495, 0.3642]   N_students=6083  N_schools=.
+
+  Country: VNM   Subject: Mathematics
+    ICC = 0.3045   SE = 0.0128   95% CI: [0.2795, 0.3296]   N_students=4837  N_schools=.
+
+  Country: VNM   Subject: Reading
+    ICC = 0.3358   SE = 0.0109   95% CI: [0.3145, 0.3571]   N_students=4837  N_schools=.
+
+  Country: VNM   Subject: Writing
+    ICC = 0.2405   SE = 0.0089   95% CI: [0.2231, 0.2579]   N_students=4837  N_schools=.
+
+. 
+. di as txt _n "--- Summary: Unconditional School-Level ICC ---"
+
+--- Summary: Unconditional School-Level ICC ---
+
+. di as txt "Row order: KHM_M KHM_R KHM_W  LAO_M ... VNM_W"
+Row order: KHM_M KHM_R KHM_W  LAO_M ... VNM_W
+
+. matrix list `icc_results', format(%8.4f)
+
+__000000[18,4]
+            ICC          SE  N_students   N_schools
+ r1      0.3398      0.0037     5.4e+03           .
+ r2      0.3050      0.0042     5.4e+03           .
+ r3      0.2446      0.0028     5.4e+03           .
+ r4      0.4931      0.0055     4.7e+03           .
+ r5      0.4427      0.0046     4.7e+03           .
+ r6      0.4595      0.0102     4.7e+03           .
+ r7      0.2636      0.0034     5.7e+03           .
+ r8      0.3188      0.0057     5.7e+03           .
+ r9      0.3815      0.0087     5.7e+03           .
+r10      0.4304      0.0053     4.5e+03           .
+r11      0.3704      0.0063     4.5e+03           .
+r12      0.3242      0.0092     4.5e+03           .
+r13      0.4273      0.0027     6.1e+03           .
+r14      0.4709      0.0025     6.1e+03           .
+r15      0.3568      0.0037     6.1e+03           .
+r16      0.3045      0.0128     4.8e+03           .
+r17      0.3358      0.0109     4.8e+03           .
+r18      0.2405      0.0089     4.8e+03           .
+
+. 
+. 
+. /*==============================================================================
+>   SECTION 4 — MERGE SCHOOL-LEVEL DATA FOR THE PHILIPPINES
+> ==============================================================================*/
+. 
+. di as txt _n(2) "========================================================"
+
+
+========================================================
+
+. di as txt        "  LOADING AND MERGING SCHOOL DATA (Philippines)"
+  LOADING AND MERGING SCHOOL DATA (Philippines)
+
+. di as txt        "========================================================"
+========================================================
+
+. 
+. preserve
+
+. 
+.     tempfile school_data
+
+.     import spss using "$data_path/SEA-PLM_Regional_Schools 2.0.SAV", clear
+(139 vars, 1,094 obs)
+
+. 
+.     capture confirm variable CNT
+
+.     if _rc rename cnt CNT
+
+. 
+.     keep if CNT == "PHL"
+(921 observations deleted)
+
+. 
+.     keep CNT StIDStrt StIDSch ///
+>          C_SCHSIZE SCHSIZE_G5 PCGIRLS_G5 ///
+>          STRATIO_PERM STRATIO_TEMP ///
+>          C_GENDER C_ISCED C_AGE ///
+>          resou hinder comatpa comatst comattc studiss
+
+. 
+.     capture confirm string variable StIDStrt
+
+.     if _rc tostring StIDStrt, replace format("%02.0f")
+
+.     capture confirm string variable StIDSch
+
+.     if _rc tostring StIDSch, replace format("%03.0f")
+
+.     capture confirm string variable CNT
+
+.     if _rc {
+.         decode CNT, gen(CNT_temp)
+.         drop CNT
+.         rename CNT_temp CNT
+.     }
+
+. 
+.     gen schoolid_str = CNT + StIDStrt + StIDSch
+
+.     drop CNT StIDStrt StIDSch
+
+.     duplicates report schoolid_str
+
+Duplicates in terms of schoolid_str
+
+--------------------------------------
+   Copies | Observations       Surplus
+----------+---------------------------
+        1 |          173             0
+--------------------------------------
+
+.     save `school_data', replace
+(file /var/folders/_b/2wf3gjnx42s4k_vs5n079mh40000gn/T//St27122.000031 not found)
+file /var/folders/_b/2wf3gjnx42s4k_vs5n079mh40000gn/T//St27122.000031 saved as .dta format
+
+. 
+. restore
+
+. 
+. * Rebuild schoolid_str in student data for merge
+. capture confirm string variable StIDStrt
+
+. if _rc tostring StIDStrt, gen(StIDStrt_s) format("%02.0f")
+
+. else   gen StIDStrt_s = StIDStrt
+
+. 
+. capture confirm string variable StIDSch
+
+. if _rc tostring StIDSch, gen(StIDSch_s) format("%03.0f")
+
+. else   gen StIDSch_s = StIDSch
+
+. 
+. capture confirm string variable CNT
+
+. if _rc decode CNT, gen(CNT_s)
+
+. else   gen CNT_s = CNT
+
+. 
+. gen schoolid_str = CNT_s + StIDStrt_s + StIDSch_s
+
+. drop StIDStrt_s StIDSch_s CNT_s
+
+. 
+. merge m:1 schoolid_str using `school_data', keep(master match) gen(_merge_school)
+(label labels1 already defined)
+(label labels2 already defined)
+(label labels3 already defined)
+(label labels4 already defined)
+(label labels5 already defined)
+(label labels6 already defined)
+(label labels7 already defined)
+(label labels8 already defined)
+
+    Result                      Number of obs
+    -----------------------------------------
+    Not matched                        25,117
+        from master                    25,117  (_merge_school==1)
+        from using                          0  (_merge_school==2)
+
+    Matched                             6,083  (_merge_school==3)
+    -----------------------------------------
+
+. di as txt "School merge results (Philippines):"
+School merge results (Philippines):
+
+. tab _merge_school if CNT == "PHL"
+
+   Matching result from |
+                  merge |      Freq.     Percent        Cum.
+------------------------+-----------------------------------
+            Matched (3) |      6,083      100.00      100.00
+------------------------+-----------------------------------
+                  Total |      6,083      100.00
+
+. drop schoolid_str _merge_school
+
+. 
+. * Standardise continuous school covariates (PHL only)
+. foreach v of varlist C_SCHSIZE SCHSIZE_G5 PCGIRLS_G5 ///
+>                      STRATIO_PERM STRATIO_TEMP C_AGE ///
+>                      resou hinder comatpa comatst comattc studiss {
+  2.     quietly summarize `v' if CNT == "PHL"
+  3.     if r(sd) > 0 {
+  4.         gen z_`v' = (`v' - r(mean)) / r(sd) if CNT == "PHL"
+  5.         label variable z_`v' "`v' standardised (PHL)"
+  6.     }
+  7. }
+(25,117 missing values generated)
+(25,117 missing values generated)
+(25,117 missing values generated)
+(25,147 missing values generated)
+(30,565 missing values generated)
+(25,117 missing values generated)
+(25,154 missing values generated)
+(25,253 missing values generated)
+(25,189 missing values generated)
+(25,189 missing values generated)
+(25,189 missing values generated)
+(25,155 missing values generated)
+
+. 
+. 
+. /*==============================================================================
+>   SECTION 5 — CONDITIONAL ICC FOR THE PHILIPPINES  (via mixed + estat icc)
+> 
+>   After each mixed call, estat icc returns:
+>     r(icc2)  = school-level ICC
+>     r(se2)   = SE of school-level ICC (delta method)
+> 
+>   Variance explained at school level (VES):
+>     VES = 1 − (mean σ²_u|X  /  mean σ²_u_null)
+>   School-level variance σ²_u is still drawn from the mixed coefficient
+>   [lns1_1_1]_cons since estat icc does not return it directly.
+> 
+>   Model A: School resources & size
+>   Model B: Principal characteristics & community context
+> ==============================================================================*/
+. 
+. di as txt _n(2) "========================================================"
+
+
+========================================================
+
+. di as txt        "  CONDITIONAL ICC — PHILIPPINES"
+  CONDITIONAL ICC — PHILIPPINES
+
+. di as txt        "========================================================"
+========================================================
+
+. 
+. local cov_A "z_C_SCHSIZE z_STRATIO_PERM z_STRATIO_TEMP z_PCGIRLS_G5"
+
+. local cov_B "i.C_GENDER z_C_AGE i.C_ISCED z_resou z_hinder z_comatpa z_comatst z_comattc z_studiss"
+
+. 
+. * Re-declare subjects (defensive; ensures the macro is set for this section)
+. local subjects M R W
+
+. 
+. foreach subj of local subjects {
+  2.     di as txt _n "  ===== Subject: `subj_lbl_`subj'' ====="
+  3. 
+.     *--- Null model (unconditional, PHL only) ---------------------------------*
+.     scalar var_u_null_sum = 0
+  4.     forvalues pv = 1/5 {
+  5.         quietly mixed PV`pv'_`subj' [pw=wt_scaled] if CNT == "PHL" || schoolid:, mle
+  6.         quietly estat icc
+  7.         scalar icc_`pv' = r(icc2)
+  8.         scalar se_`pv'  = r(se2)
+  9.         scalar var_u_null_sum = var_u_null_sum + exp(2 * [lns1_1_1]_cons)
+ 10.     }
+ 11.     scalar var_u_null_avg = var_u_null_sum / 5
+ 12. 
+.     scalar icc_bar = (icc_1 + icc_2 + icc_3 + icc_4 + icc_5) / 5
+ 13.     scalar V_W = ((se_1)^2 + (se_2)^2 + (se_3)^2 + (se_4)^2 + (se_5)^2) / 5
+ 14.     scalar V_B = ((icc_1 - icc_bar)^2 + (icc_2 - icc_bar)^2 + ///
+>                   (icc_3 - icc_bar)^2 + (icc_4 - icc_bar)^2 + ///
+>                   (icc_5 - icc_bar)^2) / 4
+ 15.     scalar se_comb = sqrt(V_W + 1.2 * V_B)
+ 16. 
+.     di as txt _n "    Null model (unconditional):"
+ 17.     di as txt "      ICC = " %6.4f icc_bar "  SE = " %6.4f se_comb
+ 18. 
+.     *--- Conditional models ---------------------------------------------------*
+.     foreach spec in A B {
+ 19.         local covars "`cov_A'"
+ 20.         local desc   "Model A: School resources & size"
+ 21.         if "`spec'" == "B" {
+ 22.             local covars "`cov_B'"
+ 23.             local desc   "Model B: Principal characteristics & community"
+ 24.         }
+ 25. 
+.         di as txt _n "    `desc':"
+ 26. 
+.         scalar var_u_cond_sum = 0
+ 27.         local npv_ok = 0
+ 28. 
+.         forvalues pv = 1/5 {
+ 29.             scalar icc_`pv' = .
+ 30.             scalar se_`pv'  = .
+ 31.             capture mixed PV`pv'_`subj' `covars' [pw=wt_scaled] ///
+>                 if CNT == "PHL" || schoolid:, mle
+ 32.             if _rc di as txt "      PV`pv': model did not converge -- skipping"
+ 33.             if !_rc {
+ 34.                 quietly estat icc
+ 35.                 scalar icc_`pv' = r(icc2)
+ 36.                 scalar se_`pv'  = r(se2)
+ 37.                 scalar var_u_cond_sum = var_u_cond_sum + exp(2 * [lns1_1_1]_cons)
+ 38.                 local ++npv_ok
+ 39.             }
+ 40.         }
+ 41. 
+.         * Rubin's rules (converged PVs only; cond() avoids nested if-block)
+.         scalar icc_bar = 0
+ 42.         forvalues pv = 1/5 {
+ 43.             scalar icc_bar = icc_bar + cond(icc_`pv' == ., 0, icc_`pv')
+ 44.         }
+ 45.         scalar icc_bar = icc_bar / `npv_ok'
+ 46. 
+.         scalar V_W = 0
+ 47.         scalar V_B = 0
+ 48.         forvalues pv = 1/5 {
+ 49.             scalar V_W = V_W + cond(icc_`pv' == ., 0, (se_`pv')^2)
+ 50.             scalar V_B = V_B + cond(icc_`pv' == ., 0, (icc_`pv' - icc_bar)^2)
+ 51.         }
+ 52.         scalar V_W = V_W / `npv_ok'
+ 53.         scalar V_B = V_B / (`npv_ok' - 1)
+ 54.         scalar se_comb = sqrt(V_W + (1 + 1/`npv_ok') * V_B)
+ 55. 
+.         scalar var_u_cond_avg = var_u_cond_sum / `npv_ok'
+ 56.         scalar ves = 1 - (var_u_cond_avg / var_u_null_avg)
+ 57. 
+.         di as txt "      ICC = " %6.4f icc_bar "  SE = " %6.4f se_comb ///
+>                   "   95% CI: [" %6.4f (icc_bar - 1.96*se_comb) ///
+>                   ", " %6.4f (icc_bar + 1.96*se_comb) "]"
+ 58.         di as txt "      Variance explained at school level (VES) = " %6.4f ves
+ 59.     }
+ 60. }
+
+  ===== Subject: Mathematics =====
+
+    Null model (unconditional):
+      ICC = 0.4377  SE = 0.0334
+
+    Model A: School resources & size:
+      ICC = 0.6485  SE = 0.0754   95% CI: [0.5008, 0.7962]
+      Variance explained at school level (VES) = -1.1580
+
+    Model B: Principal characteristics & community:
+      ICC = 0.3381  SE = 0.0284   95% CI: [0.2824, 0.3937]
+      Variance explained at school level (VES) = 0.3472
+
+  ===== Subject: Reading =====
+
+    Null model (unconditional):
+      ICC = 0.4824  SE = 0.0349
+
+    Model A: School resources & size:
+      ICC = 0.6628  SE = 0.0665   95% CI: [0.5324, 0.7932]
+      Variance explained at school level (VES) = -1.1003
+
+    Model B: Principal characteristics & community:
+      ICC = 0.3611  SE = 0.0294   95% CI: [0.3035, 0.4187]
+      Variance explained at school level (VES) = 0.3988
+
+  ===== Subject: Writing =====
+
+    Null model (unconditional):
+      ICC = 0.3761  SE = 0.0296
+
+    Model A: School resources & size:
+      ICC = 0.6123  SE = 0.0807   95% CI: [0.4541, 0.7704]
+      Variance explained at school level (VES) = -1.1329
+
+    Model B: Principal characteristics & community:
+      ICC = 0.2903  SE = 0.0274   95% CI: [0.2366, 0.3439]
+      Variance explained at school level (VES) = 0.3243
+
+. 
+. 
+. /*==============================================================================
+>   END
+> ==============================================================================*/
+. 
+. di as txt _n(2) "Analysis complete."
+
+
+Analysis complete.
+
+. capture log close
